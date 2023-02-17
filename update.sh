@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Check if the user has root privileges
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${RED}This script must be run as root.${NC}"
+    exit 1
+fi
+
 # Color variables
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
