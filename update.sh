@@ -6,6 +6,9 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+# Clear
+clear
+
 # Color variables
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
