@@ -1,5 +1,10 @@
 #!/bin/bash
 
+
+if [ -z "${USER}" ]; then
+    USER="$(id -un)"
+fi
+
 # Check if the user has root privileges
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}This script must be run as root.${NC}"
