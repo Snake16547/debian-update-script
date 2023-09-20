@@ -6,9 +6,6 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Clear
-clear
-
 # Color variables
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -33,15 +30,9 @@ fi
 
 # Upgrade the installed packages with detailed and animated output
 echo -e "${GREEN}Upgrading installed packages...${NC}"
-last_line=""
-while true; do
-    new_line=$(sudo apt upgrade -y --quiet --assume-yes --fix-missing 2>&1 | tail -n 1)
-    if [ "$new_line" == "$last_line" ]; then
-        break
-    fi
-    last_line="$new_line"
-    echo -ne "${BLUE}$last_line\r${NC}"
-    sleep 0.1
+for package in $upgrade_list; do
+    echo -e "${YELLOW}Upgrading package: ${BLUE}$package${NC}"
+    sudo apt install --only-upgrade -y $package > /dev/null 2>&1
 done
 
 # Remove unnecessary packages and clean up and redirect output to null
