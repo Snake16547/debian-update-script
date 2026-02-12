@@ -1,16 +1,12 @@
 #!/bin/bash
 
-# Up -- Debian/Ubuntu Update Tool (Version 1.3)
+# Up -- Debian/Ubuntu Update Tool (Version 1.4)
 # Advanced command to fully update system: "up" Adding the option "--clean" will
-# remove orphaned packages and auto-clean the apt cache. (January, 2018)
-# Adding the option "--remove" will just reomve orphaned packages.
+# remove orphaned packages and auto-clean the apt cache. (February, 2026)
+# Adding the option "--remove" will just remove orphaned packages.
 # By Joe Collins www.ezeelinux.com (GNU/General Public License version 2.0)
 #
-# ...And way we go!
-
-# Check for less utility and install if needed:
-
-dpkg -l | grep -qw less || sudo apt install less -yyq
+# ...And away we go!
 
 # Set BASH to quit script and exit on errors:
 
@@ -18,43 +14,51 @@ set -e
 
 # Functions:
 
+ensure_less() {
+    if ! dpkg -s less >/dev/null 2>&1; then
+        echo "Installing 'less' for help viewer..."
+        sudo apt install -yyq less
+    fi
+}
+
 update() {
-
-echo "Starting full system update..."
-sudo apt update
-sudo apt full-upgrade -yy
-
+    echo "Starting full system update..."
+    sudo apt update
+    sudo apt full-upgrade -yy
 }
 
 clean() {
-
-echo "Removing apt cache packages that can no longer be downloaded..."
-sudo apt autoclean
-
+    echo "Removing apt cache packages that can no longer be downloaded..."
+    sudo apt autoclean
 }
 
 remove() {
+    echo "Removing orphaned packages..."
+    sudo apt autoremove -yy
 
-echo "Removing orpahned packages..."
-sudo apt autoremove -yy
-sudo apt remove --purge $(dpkg -l | grep "^rc" | awk '{print $2}') -yy
-
+    rc_pkgs=$(dpkg -l | awk '/^rc/ {print $2}')
+    if [ -n "$rc_pkgs" ]; then
+        echo "Purging configuration files for removed packages..."
+        # shellcheck disable=SC2086
+        sudo apt purge -yy $rc_pkgs
+    else
+        echo "No unpurged removed packages found."
+    fi
 }
 
 leave() {
-
-echo "--------------------"
-echo "- Update Complete! -"
-echo "--------------------"
-exit
-
+    echo "--------------------"
+    echo "- Update Complete! -"
+    echo "--------------------"
+    exit
 }
 
 up_help() {
+    ensure_less
 
-less << _EOF_
+    less << _EOF_
 
- Up -- Debian/Ubuntu Update Tool (Version 1.3)  -help
+ Up -- Debian/Ubuntu Update Tool (Version 1.4)  -help
 
  Up is a tool that automates the update procedure for Debian and Ubuntu based
  Linux systems.
@@ -95,43 +99,38 @@ less << _EOF_
  POSSIBILITY OF SUCH DAMAGE.
 
 _EOF_
-
 }
 
 # Execution.
 
 # Tell 'em who we are...
 
-echo "Up -- Debian/Ubuntu Update Tool (Version 1.3)"
+echo "Up -- Debian/Ubuntu Update Tool (Version 1.4)"
 
-# Update and clean:
+# Argument handling.
 
-if [ "$1" == "--clean" ]; then
-    update
-    remove
-    clean
-    leave
-fi
-
-# Update and remove orphaned packages:
-
-if [ "$1" == "--remove" ]; then
-    update
-    remove
-    leave
-fi
-
-if [ "$1" == "--help" ]; then
-    up_help
-    exit
-fi
-
-# Check for invalid argument
-
-if  [ -n "$1"  ]; then
-    echo "Up Error: Invalid argument. Try 'up --help' for more info." >&2
-    exit 1
-fi
-
-update
-leave
+case "$1" in
+    --clean)
+        update
+        remove
+        clean
+        leave
+        ;;
+    --remove)
+        update
+        remove
+        leave
+        ;;
+    --help)
+        up_help
+        exit
+        ;;
+    "")
+        update
+        leave
+        ;;
+    *)
+        echo "Up Error: Invalid argument. Try 'up --help' for more info." >&2
+        exit 1
+        ;;
+esac
