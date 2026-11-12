@@ -1,136 +1,84 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Up — minimal Debian/Ubuntu package updater
+# Based on "Up" by Joe Collins (ezeelinux.com), GPL-2.0.
+set -Eeuo pipefail
 
-# Up -- Debian/Ubuntu Update Tool (Version 1.4)
-# Advanced command to fully update system: "up" Adding the option "--clean" will
-# remove orphaned packages and auto-clean the apt cache. (February, 2026)
-# Adding the option "--remove" will just remove orphaned packages.
-# By Joe Collins www.ezeelinux.com (GNU/General Public License version 2.0)
-#
-# ...And away we go!
+VERSION="2.0.0"
+export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-readline}"
 
-# Set BASH to quit script and exit on errors:
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  bold=$'\033[1m'; dim=$'\033[2m'; green=$'\033[32m'; red=$'\033[31m'; reset=$'\033[0m'
+else
+  bold=''; dim=''; green=''; red=''; reset=''
+fi
+info() { printf '%s  • %s%s\n' "$dim" "$*" "$reset"; }
+ok() { printf '%s  ✓ %s%s\n' "$green" "$*" "$reset"; }
+die() { printf '%sError:%s %s\n' "$red" "$reset" "$*" >&2; exit 1; }
+usage() {
+  cat <<'HELP'
+Up — minimal Debian/Ubuntu updater
 
-set -e
+Usage: ./update.sh [option]
 
-# Functions:
+  (none)       Refresh package lists and full-upgrade
+  --remove     Also autoremove unused dependencies
+  --clean      Also autoremove and autoclean the APT cache
+  --dry-run    Simulate a full-upgrade without changing packages
+  --help       Show this help
+  --version    Show version
 
-ensure_less() {
-    if ! dpkg -s less >/dev/null 2>&1; then
-        echo "Installing 'less' for help viewer..."
-        sudo apt install -yyq less
-    fi
+This tool updates packages within the configured APT repositories.
+It does not perform a Debian release upgrade or change APT sources.
+HELP
 }
-
-update() {
-    echo "Starting full system update..."
-    sudo apt update
-    sudo apt full-upgrade -yy
-}
-
-clean() {
-    echo "Removing apt cache packages that can no longer be downloaded..."
-    sudo apt autoclean
-}
-
-remove() {
-    echo "Removing orphaned packages..."
-    sudo apt autoremove -yy
-
-    rc_pkgs=$(dpkg -l | awk '/^rc/ {print $2}')
-    if [ -n "$rc_pkgs" ]; then
-        echo "Purging configuration files for removed packages..."
-        # shellcheck disable=SC2086
-        sudo apt purge -yy $rc_pkgs
-    else
-        echo "No unpurged removed packages found."
-    fi
-}
-
-leave() {
-    echo "--------------------"
-    echo "- Update Complete! -"
-    echo "--------------------"
-    exit
-}
-
-up_help() {
-    ensure_less
-
-    less << _EOF_
-
- Up -- Debian/Ubuntu Update Tool (Version 1.4)  -help
-
- Up is a tool that automates the update procedure for Debian and Ubuntu based
- Linux systems.
-
- Press "q" to exit this Help page.
-
- Commands:
-    up = full system update.
-
-    Running "up" with no options will update the apt cache and then perform a
-    full distribution update automatically.
-
-    up --remove = full system update with orphaned packages removed.
-    up --clean = full system update with full cleanup.
-
-    Adding the "--clean" option will invoke the apt commands to search for and
-    remove locally cached packages that are no longer in the repositories and
-    remove orphaned packages that are no longer needed by programs.
-
-    The "--remove" option only removes orphaned packages, leaving the apt cache
-    alone.
-
-    up --help = shows this help page.
-
- By Joe Collins www.ezeelinux.com (GNU/General Public License version 2.0)
-
- Disclaimer:
-
- THIS SOFTWARE IS PROVIDED BY EZEELINUX “AS IS” AND ANY EXPRESS OR IMPLIED
- WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
- EVENT SHALL EZEELINUX BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
- IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- POSSIBILITY OF SUCH DAMAGE.
-
-_EOF_
-}
-
-# Execution.
-
-# Tell 'em who we are...
-
-echo "Up -- Debian/Ubuntu Update Tool (Version 1.4)"
-
-# Argument handling.
-
-case "$1" in
-    --clean)
-        update
-        remove
-        clean
-        leave
-        ;;
-    --remove)
-        update
-        remove
-        leave
-        ;;
-    --help)
-        up_help
-        exit
-        ;;
-    "")
-        update
-        leave
-        ;;
-    *)
-        echo "Up Error: Invalid argument. Try 'up --help' for more info." >&2
-        exit 1
-        ;;
+mode=update
+case "${1:-}" in
+  '') ;;
+  --remove) mode=remove ;;
+  --clean) mode=clean ;;
+  --dry-run) mode=dry ;;
+  --help|-h) usage; exit 0 ;;
+  --version) printf 'Up %s\n' "$VERSION"; exit 0 ;;
+  *) usage >&2; die "Unknown option: $1" ;;
 esac
+[[ $# -le 1 ]] || die "Only one option is supported."
+command -v apt-get >/dev/null || die "apt-get is required."
+command -v dpkg-query >/dev/null || die "dpkg-query is required."
+[[ -r /etc/os-release ]] || die "Cannot detect the operating system."
+# shellcheck disable=SC1091
+. /etc/os-release
+case " ${ID:-} ${ID_LIKE:-} " in
+  *' debian '*|*' ubuntu '*) ;;
+  *) die "Only Debian and Ubuntu based systems are supported." ;;
+esac
+if (( EUID == 0 )); then
+  runner=()
+else
+  command -v sudo >/dev/null || die "Run as root or install sudo."
+  runner=(sudo)
+fi
+trap 'printf "%sUpdate failed at line %s.%s\n" "$red" "$LINENO" "$reset" >&2' ERR
+printf '\n%sUp%s %s%s\n' "$bold" "$reset" "${PRETTY_NAME:-Linux}" "$reset"
+info "Mode: $mode"
+if [[ "$mode" == dry ]]; then
+  info "Simulating full-upgrade (no changes)"
+  "${runner[@]}" apt-get -s full-upgrade
+  ok "Simulation finished"
+  exit 0
+fi
+info "Refreshing package lists"
+"${runner[@]}" apt-get update
+info "Upgrading installed packages"
+"${runner[@]}" apt-get full-upgrade
+if [[ "$mode" == remove || "$mode" == clean ]]; then
+  info "Removing unused dependencies"
+  "${runner[@]}" apt-get autoremove
+fi
+if [[ "$mode" == clean ]]; then
+  info "Cleaning obsolete cached packages"
+  "${runner[@]}" apt-get autoclean
+fi
+if [[ -e /run/reboot-required ]]; then
+  info "Reboot recommended"
+fi
+ok "Finished"
